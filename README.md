@@ -52,7 +52,11 @@ The project involves:
 To start the simulation, run the following command:
 
 ```bash
-python src/main.py
+python receiver/src/main.py
+```
+
+```bash
+python sender/src/main.py
 ```
 
 ## Contribution
