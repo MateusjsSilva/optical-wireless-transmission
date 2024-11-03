@@ -6,7 +6,7 @@ class BinaryBlinker:
     def __init__(self, window):
         self.window = window
         self.window.title("Blinking Binary Converter")
-        self.window.configure(bg="#000000")  # Set initial background to black
+        self.window.configure(bg="red")  # Set initial background to black
         self.is_blinking = False  # Controls the blinking state
         self.binary_representation = ""  # Initializes the binary representation
         self.current_index = -1  # Index for blinking control
@@ -53,7 +53,7 @@ class BinaryBlinker:
         user_text = simpledialog.askstring("Input", "Please enter your text:")
         if user_text:
             # Start the blinking process after a 1 second delay
-            self.window.after(5000, self.start_blinking_process, user_text)
+            self.window.after(10000, self.start_blinking_process, user_text)
 
     def start_blinking_process(self, user_text):
         """Handles the blinking process with the given user text."""
