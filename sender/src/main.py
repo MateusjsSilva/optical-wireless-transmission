@@ -53,7 +53,7 @@ class BinaryBlinker:
         user_text = simpledialog.askstring("Input", "Please enter your text:")
         if user_text:
             # Start the blinking process after a 1 second delay
-            self.window.after(10000, self.start_blinking_process, user_text)
+            self.window.after(5000, self.start_blinking_process, user_text)
 
     def start_blinking_process(self, user_text):
         """Handles the blinking process with the given user text."""
@@ -65,7 +65,7 @@ class BinaryBlinker:
     def blink_start_indicator(self):
         """Sets the window background to green for the start indication."""
         self.window.configure(bg="green")
-        self.window.after(1000, self.blink_current_bit)  # Move to the first bit after 1 second
+        self.window.after(2000, self.blink_current_bit)  # Move to the first bit after 1 second
 
     def blink_current_bit(self):
         """Blinks the window based on the binary bit at the current index."""
@@ -74,7 +74,7 @@ class BinaryBlinker:
             color = self.determine_color_for_bit(current_bit)
             self.window.configure(bg=color)
             self.current_index += 1  # Move to the next bit
-            self.window.after(1000, self.blink_current_bit)  # Schedule the next blink in 1 second
+            self.window.after(500, self.blink_current_bit)  # Schedule the next blink in 1 second
         else:
             self.blink_end_indicator()  # Final blink to indicate the end
 
