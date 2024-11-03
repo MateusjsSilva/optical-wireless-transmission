@@ -2,127 +2,141 @@ import cv2
 import numpy as np
 import time
 
-def capture_frame(capture_interval):
+from config import PARITY_TYPE, START_SEQUENCE, END_SEQUENCE
+from synchronization import check_checksum, check_parity, decode_message, find_sequence
+
+def capture_frame(capture_interval, num_bits=2):
     """
-    Captures frames from the camera at defined intervals and displays the image in real time.
-    A central rectangle is drawn, and two lines within it are analyzed for bit detection.
-    The two lines are drawn in red on the frame.
+    Captures frames from the camera at defined intervals, analyzes regions to transmit multiple bits, and displays them.
+    
+    Args:
+    - capture_interval (float): Frame capture interval in seconds.
+    - num_bits (int): Number of bits to be transmitted per image (default = 4).
     """
     cap = cv2.VideoCapture(0)
-
     if not cap.isOpened():
         print("Error opening the camera.")
         return None
 
     prev_time = time.time()
+    rect_width, rect_height = 500, 400
+    bits_received = []
 
     try:
         while True:
-            # Capture the current time to control the capture interval
             current_time = time.time()
-
-            # Check if the capture interval has been reached
             if (current_time - prev_time) >= capture_interval:
                 ret, frame = cap.read()
                 if not ret:
-                    print("Error capturing the image.")
+                    print("Erro ao abrir a câmera.")
                     break
 
-                # Get the image dimensions
                 height, width, _ = frame.shape
-
-                # Define the size of the centered rectangle (e.g., 300x200 pixels)
-                rect_width = 500
-                rect_height = 400
-
-                # Calculate the coordinates of the central rectangle
                 start_x = (width - rect_width) // 2
                 start_y = (height - rect_height) // 2
                 end_x = start_x + rect_width
                 end_y = start_y + rect_height
 
-                # Draw the rectangle on the frame
+                # Draw the central rectangle
                 cv2.rectangle(frame, (start_x, start_y), (end_x, end_y), (0, 255, 0), 2)
 
-                # Extract the region of interest (ROI) within the rectangle
+                # Extract the ROI and detect multiple bits
                 roi = frame[start_y:end_y, start_x:end_x]
+                bits_detected = detect_multiple_bits(roi, frame, start_x, start_y, num_bits=num_bits)
+                bits_received.extend(bits_detected)
 
-                # Convert the ROI to grayscale
-                gray_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+                # Check synchronization and complete message
+                start_index = find_sequence(bits_received, START_SEQUENCE)
+                end_index = find_sequence(bits_received, END_SEQUENCE, start_index + len(START_SEQUENCE))
 
-                # Choose two specific lines to analyze
-                line_1_y = rect_height // 3  # First line at 1/3 of the rectangle height
-                line_2_y = (rect_height // 3) * 2  # Second line at 2/3 of the rectangle height
+                if start_index != -1 and end_index != -1:
+                    message_bits = bits_received[start_index + len(START_SEQUENCE):end_index]
 
-                # Detect bits on the two lines and draw them in red on the frame
-                bits_detected = detect_bits_in_two_lines(gray_roi, frame, start_x, start_y, line_1_y, line_2_y)
+                    # Check parity and checksum for errors
+                    if check_parity(message_bits, PARITY_TYPE) and check_checksum(message_bits):
+                        message, status = decode_message(message_bits)
+                        print("Mensagem:", message)
+                        print("Status:", status)
+                    else:
+                        print("Erro de paridade ou checksum detectado!")
 
-                # Display the detected bits
-                print(f"Bits detected on the lines: {bits_detected}")
+                    # Clear bits after processing
+                    bits_received = bits_received[end_index + len(END_SEQUENCE):]
 
-                # Show the image with the rectangle and lines on the screen
+                # Show frame with detected bits
                 cv2.imshow('Camera', frame)
-
-                # Update the last capture time
                 prev_time = current_time
 
-            # Allow the program to be stopped by pressing 'q'
             key = cv2.waitKey(1) & 0xFF
-
             if key == ord('q'):
-                print("Exiting...")
                 break
-
-            # Manual adjustments to the capture rate
-            elif key == ord('u'):  # increase interval (slower capture)
-                capture_interval += 0.1
-                print(f"Increasing capture interval: {capture_interval} seconds")
-
-            elif key == ord('d'):  # decrease interval (faster capture)
-                capture_interval = max(0.1, capture_interval - 0.1)
-                print(f"Decreasing capture interval: {capture_interval} seconds")
 
     finally:
         cap.release()
         cv2.destroyAllWindows()
 
-def detect_bits_in_two_lines(roi, frame, start_x, start_y, line_1_y, line_2_y):
+def detect_multiple_bits(roi, frame, start_x, start_y, num_bits=4):
     """
-    Detects the predominant bits (black or white) in two specific lines of the ROI and draws these
-    lines in red on the original frame.
-    
-    Parameters:
-    - roi: The region of interest in grayscale.
-    - frame: The original frame to draw the lines.
-    - start_x, start_y: Coordinates of the top-left corner of the ROI on the original frame.
-    - line_1_y, line_2_y: Vertical positions of the two lines within the ROI.
+    Divides the ROI into 'num_bits' horizontal lines and detects the bit (0 or 1) in each line.
     """
-    height, width = roi.shape
+    height, width = roi.shape[:2]
     bits_detected = []
 
-    # Analyzing the first line
-    line_1 = roi[line_1_y, :]  # Extract the complete line 1
-    mean_intensity_1 = np.mean(line_1)
-    bit_1 = 1 if mean_intensity_1 > 127 else 0  # Set bit as 1 or 0
+    for i in range(num_bits):
+        line_y = int((i + 0.5) * height / num_bits)
+        line_roi = roi[max(0, line_y - 3):line_y + 3, :]
+        mean_intensity = np.mean(line_roi)
+        bit = 1 if mean_intensity > 127 else 0
+        bits_detected.append(bit)
+        cv2.line(frame, (start_x, start_y + line_y), (start_x + width, start_y + line_y), (0, 0, 255), 1)
+
+    return bits_detected
+
+def apply_mask(frame, start_x, start_y, width, height):
+    """
+    Applies a colored mask over a square area within the rectangle.
+    """
+    masked_frame = frame.copy()
+    mask_width, mask_height = width // 4, height // 4  # Size of the mask square (1/4 of the rectangle)
+    mask_x = start_x + (width - mask_width) // 2      # Center the mask square
+    mask_y = start_y + (height - mask_height) // 2
+
+    # Apply the mask with a semi-transparent color (example: blue)
+    color = (255, 0, 0)  # Blue
+    alpha = 0.5          # Mask transparency
+    masked_frame[mask_y:mask_y + mask_height, mask_x:mask_x + mask_width] = cv2.addWeighted(
+        frame[mask_y:mask_y + mask_height, mask_x:mask_x + mask_width], 1 - alpha,
+        np.full((mask_height, mask_width, 3), color, dtype=np.uint8), alpha, 0)
+
+    return masked_frame
+
+def detect_bits_in_two_lines(roi, frame, start_x, start_y, rect_height, line_width=6):
+    """
+    Detects bits in two horizontal lines within the ROI.
+    """
+    height, width = roi.shape[:2]
+    bits_detected = []
+
+    # Line positions using proportion of rectangle height
+    line_1_y = int(rect_height * 0.25)  # Line at 25% of rectangle height
+    line_2_y = int(rect_height * 0.75)  # Line at 75% of rectangle height
+
+    # Analyze the first line
+    line_1_roi = roi[max(0, line_1_y - line_width // 2):line_1_y + line_width // 2, :]
+    mean_intensity_1 = np.mean(line_1_roi)
+    bit_1 = 1 if mean_intensity_1 > 127 else 0
     bits_detected.append(bit_1)
 
     # Draw the first red line on the original frame
     cv2.line(frame, (start_x, start_y + line_1_y), (start_x + width, start_y + line_1_y), (0, 0, 255), 1)
 
-    # Analyzing the second line
-    line_2 = roi[line_2_y, :]  # Extract the complete line 2
-    mean_intensity_2 = np.mean(line_2)
-    bit_2 = 1 if mean_intensity_2 > 127 else 0  # Set bit as 1 or 0
+    # Analyze the second line
+    line_2_roi = roi[max(0, line_2_y - line_width // 2):line_2_y + line_width // 2, :]
+    mean_intensity_2 = np.mean(line_2_roi)
+    bit_2 = 1 if mean_intensity_2 > 127 else 0
     bits_detected.append(bit_2)
 
     # Draw the second red line on the original frame
     cv2.line(frame, (start_x, start_y + line_2_y), (start_x + width, start_y + line_2_y), (0, 0, 255), 1)
 
     return bits_detected
-
-def detect_and_display_color(frame):
-    """
-    Detects if the predominant color in the frame is black (0) or white (1) and returns the result.
-    This method is kept for compatibility with the main function but now uses the two lines for analysis.
-    """
-    return detect_bits_in_two_lines(frame)
