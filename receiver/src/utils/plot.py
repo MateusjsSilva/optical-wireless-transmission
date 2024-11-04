@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 
-distances = [1, 2, 3, 4, 5]
+distances = [0.5, 1, 1.5, 2, 2.5]
 accuracy = [100, 100, 75, 50, 25]
 
 plt.plot(distances, accuracy, marker='o')
