@@ -7,7 +7,7 @@ class BinaryBlinker:
         # Color variables
         self.bg_color_calibration = "cyan" 
         self.bg_color_start = "green"         
-        self.bg_color_end = "orange"
+        self.bg_color_end = "magenta"
         self.bg_color_zero = "black"
         self.bg_color_one = "red"
         self.btn_color = "cyan"
